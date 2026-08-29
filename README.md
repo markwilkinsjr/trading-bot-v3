@@ -1,25 +1,32 @@
 # Trading Bot Demo
 
-> **Which chain and which pairs?** See
-> [docs/CHAIN_AND_PAIR_SELECTION.md](docs/CHAIN_AND_PAIR_SELECTION.md) for the
-> research behind that choice, and run `node scripts/scan.js base` to measure
-> live spreads yourself instead of trusting a hardcoded pair. The shipped
-> `config.json` default (WETH/ARB on Arbitrum) is a weak market — that doc
-> explains why.
+> **Which chain, which pairs, and does the flash loan even work there?** See
+> [docs/CHAIN_AND_PAIR_SELECTION.md](docs/CHAIN_AND_PAIR_SELECTION.md). Short
+> version: only chains with **two fee-tier Uniswap-V3-style DEXes** are usable
+> (which rules out Avalanche and NEAR outright), and **Balancer V2 — this bot's
+> flash-loan provider — was exploited in Nov 2025 and is now unmaintained**, so
+> `contracts/ArbitrageAave.sol` is the safer default.
 
-## Finding a market to trade
+## Before you configure anything
 
 ```bash
-node scripts/scan.js base                        # scan Base
-node scripts/scan.js arbitrum --sizes 0.05,0.5   # scan Arbitrum at chosen sizes
-BASE_RPC_URL=https://your-endpoint node scripts/scan.js base
+node scripts/flashloan-check.js        # can you flash loan here, and how much?
+node scripts/scan.js bsc               # which pairs actually have an edge?
+node scripts/verify-sizing.js          # offline check of the trade sizer
 ```
 
-`scripts/scan.js` is read-only — it never sends a transaction. For every pair and
-fee tier in `config/chains.json` it confirms a pool exists on both exchanges,
-reads the live prices, then runs a real round trip through both quoters so the
-reported profit already accounts for swap fees and price impact. It compares that
-against live gas and prints what clears both.
+`flashloan-check.js` reports, per chain, whether Balancer and Aave are deployed,
+the **Balancer vault's real balance of your base token** (that balance is your
+maximum loan), and whether the token is a listed Aave reserve.
+
+`scan.js` is read-only — it never sends a transaction. For every pair, fee tier,
+and **venue combination** it confirms pools exist on both sides, reads live
+prices, then uses the same optimizer `bot.js` uses to find the profit-maximizing
+size through both quoters, so the reported number already accounts for swap fees
+and price impact. It compares that against live gas.
+
+Every chain uses its **wrapped gas token** as the base (WETH, WBNB), so profit
+and gas share a unit and break-even is exact.
 
 ## Technology Stack & Tools
 
@@ -89,7 +96,11 @@ Some other variables under **PROJECT_SETTINGS** are:
 - **PRICE_UNITS** (How many decimals to display when logging price)
 - **PRICE_DIFFERENCE** (Minimum price difference required for continuing execution, if lower, just continue monitoring for new swaps)
 - **GAS_LIMIT** (Gas limit estimate for estimating gas fee. Not actually used in submitting a transaction)
-- **GAS_PRICE** (Hardcoded gas price for estimating gas fee. Not actually used in submitting a transaction)
+- **GAS_PRICE** (Legacy display-only constant. Profitability now prices gas live from the provider.)
+- **MIN_TRADE_SIZE** (Smallest flash-loan size the sizer will consider, in base-token units)
+- **MIN_PROFIT** (Net profit a trade must clear, after gas and flash-loan fee, before it is submitted)
+- **MAX_POOL_FRACTION_BPS** (Caps a trade at this fraction of the thinner pool's base balance. 300 = 3%.)
+- **FLASH_LOAN_FEE_BPS** (0 for Balancer, 5 for Aave V3 — see docs/CHAIN_AND_PAIR_SELECTION.md)
 
 ### TOKENS
 If you are looking to test different ERC20 tokens and pools, you'll want to update the TOKENS object, specifically:
@@ -136,7 +147,7 @@ When a swap event occurs, the *eventHandler()* will be called. Inside of the *ev
 
 Then *determineDirection()* is called, this will determine the direction of the trades, where to buy first, then where to sell. This function will return an array called `exchangePath` in *main()*. The array contains Uniswap & Pancakeswap objects that were created in *initialization.js*. If no array is returned, this means the `priceDifference` returned earlier is not higher than `difference`
 
-If `exchangePath` is not null, then execution moves into *determineProfitability()*. This is where you can set some of your conditions on whether there is a potential arbitrage or not. This function returns either true or false.
+If `exchangePath` is not null, then execution moves into *determineProfitability()*. This searches for the trade size that maximizes net profit rather than using a fixed size: a parallel coarse sweep followed by a ternary refine over the profit curve, bounded by pool depth, and charged for live gas plus any flash-loan premium. The search itself lives in *helpers/profitability.js* and is verified offline by `node scripts/verify-sizing.js`. It returns an object with `isProfitable` and the optimal `amount`.
 
 If true is returned from *determineProfitability()*, then it calls *executeTrade()* where it makes the call to the arbitrage contract to perform the trade. Afterwards a report is logged, and the bot resumes to monitoring for swap events.
 

@@ -6,7 +6,11 @@
         "PRICE_UNITS": 0,
         "PRICE_DIFFERENCE": 0.5,
         "GAS_LIMIT": 600000,
-        "GAS_PRICE": 0.00000001
+        "GAS_PRICE": 1e-08,
+        "MIN_TRADE_SIZE": "0.01",
+        "MIN_PROFIT": "0.0005",
+        "MAX_POOL_FRACTION_BPS": 300,
+        "FLASH_LOAN_FEE_BPS": 0
     },
     "TOKENS": {
         "ARB_FOR": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",

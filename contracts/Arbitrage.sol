@@ -17,6 +17,11 @@ contract Arbitrage is IFlashLoanRecipient {
         uint24 fee;
     }
 
+    modifier onlyOwner() {
+        require(msg.sender == owner, "not owner");
+        _;
+    }
+
     constructor() {
         owner = msg.sender;
     }
@@ -26,7 +31,7 @@ contract Arbitrage is IFlashLoanRecipient {
         address[] memory _tokenPath,
         uint24 _fee,
         uint256 _flashAmount
-    ) external {
+    ) external onlyOwner {
         bytes memory data = abi.encode(
             Trade({routerPath: _routerPath, tokenPath: _tokenPath, fee: _fee})
         );

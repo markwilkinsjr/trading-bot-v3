@@ -18,7 +18,12 @@ let provider
 if (config.PROJECT_SETTINGS.isLocal) {
   provider = new ethers.WebSocketProvider(`ws://127.0.0.1:8545/`)
 } else {
-  provider = new ethers.WebSocketProvider(`wss://arb-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`)
+  // WSS_RPC_URL lets you point the bot at any chain without editing this file.
+  // Falls back to Arbitrum via Alchemy for backwards compatibility.
+  const wssUrl = process.env.WSS_RPC_URL ||
+    `wss://arb-mainnet.g.alchemy.com/v2/${process.env.ALCHEMY_API_KEY}`
+
+  provider = new ethers.WebSocketProvider(wssUrl)
 }
 
 // -- SETUP UNISWAP/PANCAKESWAP CONTRACTS -- //

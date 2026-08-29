@@ -8,6 +8,7 @@ const ethers = require("ethers")
 const config = require('./config.json')
 const { getTokenAndContract, getPoolContract, getPoolLiquidity, calculatePrice } = require('./helpers/helpers')
 const { provider, uniswap, pancakeswap, arbitrage } = require('./helpers/initialization')
+const { findOptimalTradeSize } = require('./helpers/profitability')
 
 // -- CONFIGURATION VALUES HERE -- //
 const ARB_FOR = config.TOKENS.ARB_FOR
@@ -17,6 +18,13 @@ const UNITS = config.PROJECT_SETTINGS.PRICE_UNITS
 const PRICE_DIFFERENCE = config.PROJECT_SETTINGS.PRICE_DIFFERENCE
 const GAS_LIMIT = config.PROJECT_SETTINGS.GAS_LIMIT
 const GAS_PRICE = config.PROJECT_SETTINGS.GAS_PRICE
+
+// Trade sizing. GAS_PRICE above is only used for display; the profitability
+// check prices gas live off the provider.
+const MIN_TRADE_SIZE = config.PROJECT_SETTINGS.MIN_TRADE_SIZE
+const MIN_PROFIT = config.PROJECT_SETTINGS.MIN_PROFIT
+const MAX_POOL_FRACTION_BPS = config.PROJECT_SETTINGS.MAX_POOL_FRACTION_BPS
+const FLASH_LOAN_FEE_BPS = config.PROJECT_SETTINGS.FLASH_LOAN_FEE_BPS
 
 let isExecuting = false
 
@@ -115,98 +123,100 @@ const determineDirection = async (_priceDifference) => {
 const determineProfitability = async (_exchangePath, _token0, _token1) => {
   console.log(`Determining Profitability...\n`)
 
-  // This is where you can customize your conditions on whether a profitable trade is possible...
-
-  /**
-   * The helper file has quite a few functions that come in handy
-   * for performing specifc tasks.
-   */
-
   try {
-    // Fetch liquidity off of the exchange to buy token1 from
-    const liquidity = await getPoolLiquidity(_exchangePath[0].factory, _token0, _token1, POOL_FEE, provider)
+    /**
+     * One round trip: spend `amountIn` of token0 buying token1 on the first
+     * exchange, then sell that token1 back for token0 on the second. Both
+     * quoters price their leg including the pool fee and the impact of this
+     * exact size, so the number that comes back is what the trade would really
+     * return -- not a spread reading that ignores its own footprint.
+     */
+    const quote = async (amountIn) => {
+      const [bought] = await _exchangePath[0].quoter.quoteExactInputSingle.staticCall({
+        tokenIn: _token0.address,
+        tokenOut: _token1.address,
+        amountIn,
+        fee: POOL_FEE,
+        sqrtPriceLimitX96: 0,
+      })
 
-    // An example of using a percentage of the liquidity
-    // BigInt doesn't like decimals, so we use Big.js here
-    const percentage = Big(0.5)
-    const minAmount = Big(liquidity[1]).mul(percentage)
+      if (bought === 0n) throw new Error("buy leg quoted zero")
 
-    // Figure out how much token0 needed for X amount of token1...
-    const quoteExactOutputSingleParams = {
-      tokenIn: _token0.address,
-      tokenOut: _token1.address,
-      fee: POOL_FEE,
-      amount: BigInt(minAmount.round().toFixed(0)),
-      sqrtPriceLimitX96: 0
+      const [returned] = await _exchangePath[1].quoter.quoteExactInputSingle.staticCall({
+        tokenIn: _token1.address,
+        tokenOut: _token0.address,
+        amountIn: bought,
+        fee: POOL_FEE,
+        sqrtPriceLimitX96: 0,
+      })
+
+      return returned
     }
 
-    const [token0Needed] = await _exchangePath[0].quoter.quoteExactOutputSingle.staticCall(
-      quoteExactOutputSingleParams
-    )
+    // Bound the search by what the pools hold. Taking a large fraction of a pool
+    // moves the price against you faster than the edge grows, and the flash loan
+    // has to be repaid regardless.
+    const [buyLiquidity, sellLiquidity] = await Promise.all([
+      getPoolLiquidity(_exchangePath[0].factory, _token0, _token1, POOL_FEE, provider),
+      getPoolLiquidity(_exchangePath[1].factory, _token0, _token1, POOL_FEE, provider),
+    ])
 
-    // Figure out how much token0 returned after swapping X amount of token1
-    const quoteExactInputSingleParams = {
-      tokenIn: _token1.address,
-      tokenOut: _token0.address,
-      fee: POOL_FEE,
-      amountIn: BigInt(minAmount.round().toFixed(0)),
-      sqrtPriceLimitX96: 0
+    const thinnest = buyLiquidity[0] < sellLiquidity[0] ? buyLiquidity[0] : sellLiquidity[0]
+    const maxSize = (thinnest * BigInt(MAX_POOL_FRACTION_BPS)) / 10000n
+    const minSize = ethers.parseUnits(String(MIN_TRADE_SIZE), _token0.decimals)
+
+    if (maxSize <= minSize) {
+      console.log(`Pools too thin to trade (cap ${ethers.formatUnits(maxSize, _token0.decimals)} ${_token0.symbol})\n`)
+      return { isProfitable: false, amount: 0n }
     }
 
-    const [token0Returned] = await _exchangePath[1].quoter.quoteExactInputSingle.staticCall(
-      quoteExactInputSingleParams
-    )
+    // Price gas live rather than from a hardcoded constant. This assumes token0
+    // is the chain's wrapped gas token, which holds for the pairs this bot
+    // targets (WETH/*, WBNB/*, WAVAX/*). Trading a non-gas base token would
+    // need a conversion here.
+    const feeData = await provider.getFeeData()
+    const gasPrice = feeData.maxFeePerGas ?? feeData.gasPrice ?? 0n
+    const gasCost = gasPrice * BigInt(GAS_LIMIT)
 
-    const amountIn = ethers.formatUnits(token0Needed, _token0.decimals)
-    const amountOut = ethers.formatUnits(token0Returned, _token0.decimals)
+    const best = await findOptimalTradeSize({
+      quote,
+      min: minSize,
+      max: maxSize,
+      costs: gasCost,
+      flashLoanFeeBps: FLASH_LOAN_FEE_BPS,
+    })
 
-    console.log(`Estimated amount of ${_token0.symbol} needed to buy ${_token1.symbol} on ${_exchangePath[0].name}: ${amountIn}`)
-    console.log(`Estimated amount of ${_token0.symbol} returned after swapping ${_token1.symbol} on ${_exchangePath[1].name}: ${amountOut}\n`)
-
-    const amountDifference = amountOut - amountIn
-    const estimatedGasCost = GAS_LIMIT * GAS_PRICE
-
-    // Fetch account
-    const account = new ethers.Wallet(process.env.PRIVATE_KEY, provider)
-
-    const ethBalanceBefore = ethers.formatUnits(await provider.getBalance(account.address), 18)
-    const ethBalanceAfter = ethBalanceBefore - estimatedGasCost
-
-    const wethBalanceBefore = Number(ethers.formatUnits(await _token0.contract.balanceOf(account.address), _token0.decimals))
-    const wethBalanceAfter = amountDifference + wethBalanceBefore
-    const wethBalanceDifference = wethBalanceAfter - wethBalanceBefore
-
-    const data = {
-      'ETH Balance Before': ethBalanceBefore,
-      'ETH Balance After': ethBalanceAfter,
-      'ETH Spent (gas)': estimatedGasCost,
-      '-': {},
-      'WETH Balance BEFORE': wethBalanceBefore,
-      'WETH Balance AFTER': wethBalanceAfter,
-      'WETH Gained/Lost': wethBalanceDifference,
-      '-': {},
-      'Total Gained/Lost': wethBalanceDifference - estimatedGasCost
+    if (!best) {
+      console.log(`No fillable trade size between ${ethers.formatUnits(minSize, _token0.decimals)} and ${ethers.formatUnits(maxSize, _token0.decimals)} ${_token0.symbol}\n`)
+      return { isProfitable: false, amount: 0n }
     }
 
-    console.table(data)
+    const minProfit = ethers.parseUnits(String(MIN_PROFIT), _token0.decimals)
+    const premium = (best.amountIn * BigInt(FLASH_LOAN_FEE_BPS)) / 10000n
+    const show = (value) => ethers.formatUnits(value, _token0.decimals)
+
+    console.table({
+      'Optimal size': `${show(best.amountIn)} ${_token0.symbol}`,
+      'Returned': `${show(best.amountOut)} ${_token0.symbol}`,
+      'Gross profit': show(best.grossProfit),
+      'Flash loan fee': show(premium),
+      'Gas cost': show(gasCost),
+      'NET PROFIT': show(best.netProfit),
+      'Required minimum': show(minProfit),
+      'Quoter probes': best.probes,
+    })
     console.log()
 
-    // Setup conditions...
-
-    if (Number(amountOut) < Number(amountIn)) {
-      throw new Error("Not enough to pay back flash loan")
+    if (best.netProfit < minProfit) {
+      console.log(`Below minimum profit threshold\n`)
+      return { isProfitable: false, amount: 0n }
     }
 
-    if (Number(ethBalanceAfter) < 0) {
-      throw new Error("Not enough ETH for gas fee")
-    }
-
-    return { isProfitable: true, amount: ethers.parseUnits(amountIn, _token0.decimals) }
+    return { isProfitable: true, amount: best.amountIn }
 
   } catch (error) {
-    console.log(error)
-    console.log("")
-    return { isProfitable: false, amount: 0 }
+    console.log(`Profitability check failed: ${error.shortMessage || error.message}\n`)
+    return { isProfitable: false, amount: 0n }
   }
 }
 

@@ -1,0 +1,106 @@
+{
+  "_README": [
+    "Chain profiles for scripts/scan.js.",
+    "IMPORTANT: verify every address against the protocol's official docs before",
+    "sending real funds. scan.js runs a preflight that checks each address has",
+    "contract code and that the factory returns sane pools, but it cannot tell you",
+    "that an address is the *correct* official deployment.",
+    "Uniswap V3: https://docs.uniswap.org/contracts/v3/reference/deployments",
+    "PancakeSwap V3: https://developer.pancakeswap.finance/contracts/v3/addresses",
+    "Balancer V2 Vault (flash loans) is at the same address on every chain below."
+  ],
+
+  "arbitrum": {
+    "label": "Arbitrum One",
+    "chainId": 42161,
+    "rpcEnv": "ARBITRUM_RPC_URL",
+    "defaultRpc": "https://arb1.arbitrum.io/rpc",
+    "nativeSymbol": "ETH",
+    "balancerVault": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
+    "gasLimitEstimate": 900000,
+    "exchanges": {
+      "Uniswap V3": {
+        "factory": "0x1F98431c8aD98523631AE4a59f267346ea31F984",
+        "quoter": "0x61fFE014bA17989E743c5F6cB21bF9697530B21e",
+        "router": "0xE592427A0AEce92De3Edee1F18E0157C05861564"
+      },
+      "Pancakeswap V3": {
+        "factory": "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865",
+        "quoter": "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
+        "router": "0x1b81D678ffb9C0263b24A97847620C99d213eB14"
+      }
+    },
+    "tokens": {
+      "WETH": "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1",
+      "USDC": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "USDT": "0xFd086bC7CD5C481DCC9C85ebE478A1C0b69FCbb9",
+      "ARB": "0x912CE59144191C1204E64559FE8253a0e49E6548",
+      "WBTC": "0x2f2a2543B76A4166549F7aaB2e75Bef0aefC5B0f",
+      "GMX": "0xfc5A1A6EB076a2C7aD06eD22C90d7E710E35ad0a",
+      "PENDLE": "0x0c880f6761F1af8d9Aa9C466984b80DAb9a8c9e8"
+    },
+    "baseToken": "WETH"
+  },
+
+  "base": {
+    "label": "Base",
+    "chainId": 8453,
+    "rpcEnv": "BASE_RPC_URL",
+    "defaultRpc": "https://mainnet.base.org",
+    "nativeSymbol": "ETH",
+    "balancerVault": "0xBA12222222228d8Ba445958a75a0704d566BF2C8",
+    "gasLimitEstimate": 900000,
+    "exchanges": {
+      "Uniswap V3": {
+        "factory": "0x33128a8fC17869897dcE68Ed026d694621f6FDfD",
+        "quoter": "0x3d4e44Eb1374240CE5F1B871ab261CD16335B76a",
+        "router": "0x2626664c2603336E57B271c5C0b26F421741e481"
+      },
+      "Pancakeswap V3": {
+        "factory": "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865",
+        "quoter": "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
+        "router": "0x1b81D678ffb9C0263b24A97847620C99d213eB14"
+      }
+    },
+    "tokens": {
+      "WETH": "0x4200000000000000000000000000000000000006",
+      "USDC": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "DAI": "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb",
+      "cbBTC": "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
+      "AERO": "0x940181a94A35A4569E4529A3CDfB74e38FD98631",
+      "DEGEN": "0x4ed4E862860beD51a9570b96d89aF5E1B0Efefed",
+      "BRETT": "0x532f27101965dd16442E59d40670FaF5eBB142E4"
+    },
+    "baseToken": "WETH"
+  },
+
+  "bsc": {
+    "label": "BNB Smart Chain",
+    "chainId": 56,
+    "rpcEnv": "BSC_RPC_URL",
+    "defaultRpc": "https://bsc-dataseed.bnbchain.org",
+    "nativeSymbol": "BNB",
+    "balancerVault": null,
+    "gasLimitEstimate": 900000,
+    "exchanges": {
+      "Uniswap V3": {
+        "factory": "0xdB1d10011AD0Ff90774D0C6Bb92e5C5c8b4461F7",
+        "quoter": "0x78D78E420Da98ad378D7799bE8f4AF69033EB077",
+        "router": "0xB971eF87ede563556b2ED4b1C0b0019111Dd85d2"
+      },
+      "Pancakeswap V3": {
+        "factory": "0x0BFbCF9fa4f9C56B0F40a671Ad40E0805A091865",
+        "quoter": "0xB048Bbc1Ee6b733FFfCFb9e9CeF7375518e25997",
+        "router": "0x1b81D678ffb9C0263b24A97847620C99d213eB14"
+      }
+    },
+    "tokens": {
+      "WBNB": "0xbb4CdB9CBd36B01bD1cBaEBF2De08d9173bc095c",
+      "USDT": "0x55d398326f99059fF775485246999027B3197955",
+      "USDC": "0x8AC76a51cc950d9822D68b83fE1Ad97B32Cd580d",
+      "CAKE": "0x0E09FaBB73Bd3Ade0a17ECC321fD13a19e81cE82",
+      "ETH": "0x2170Ed0880ac9A755fd29B2688956BD959F933F8"
+    },
+    "baseToken": "WBNB"
+  }
+}

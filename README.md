@@ -1,5 +1,26 @@
 # Trading Bot Demo
 
+> **Which chain and which pairs?** See
+> [docs/CHAIN_AND_PAIR_SELECTION.md](docs/CHAIN_AND_PAIR_SELECTION.md) for the
+> research behind that choice, and run `node scripts/scan.js base` to measure
+> live spreads yourself instead of trusting a hardcoded pair. The shipped
+> `config.json` default (WETH/ARB on Arbitrum) is a weak market — that doc
+> explains why.
+
+## Finding a market to trade
+
+```bash
+node scripts/scan.js base                        # scan Base
+node scripts/scan.js arbitrum --sizes 0.05,0.5   # scan Arbitrum at chosen sizes
+BASE_RPC_URL=https://your-endpoint node scripts/scan.js base
+```
+
+`scripts/scan.js` is read-only — it never sends a transaction. For every pair and
+fee tier in `config/chains.json` it confirms a pool exists on both exchanges,
+reads the live prices, then runs a real round trip through both quoters so the
+reported profit already accounts for swap fees and price impact. It compares that
+against live gas and prints what clears both.
+
 ## Technology Stack & Tools
 
 - Solidity (Writing Smart Contract)
